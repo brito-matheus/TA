@@ -166,9 +166,9 @@ data_set |>
 
 To write the var in the reduced form is necessary to have a moving-average representation. To satisfies this assumption the stationarity of the series are required. The authors employs two transformation in the original series.
 
--  **Unemployment:** remove an estimated linear trend (OLS regression)
+-   **Unemployment:** remove an estimated linear trend (OLS regression)
 
--  **GNP Growth:** remove level shift due to lower growth after 1974 (OLS regression).
+-   **GNP Growth:** remove level shift due to lower growth after 1974 (OLS regression).
 
 We will proceed in the same way and in the estimation we also included the constant coefficient to get a demean series.
 
@@ -255,9 +255,10 @@ stargazer::stargazer(var_models$var_aic$varresult$gnp,
                      dep.var.labels.include = T)
 
 ```
-### Identification 
 
-We have learned until now two ways of identification. The first one is imposing restriction on the contemporaneous effect between the variables by applying restriction on the Cholesky decomposition matrix. The second methods imposes restriction on the long-term relation between the variables, this is the method proposed by [@blanchard1988]. We will proceed this exercise analysing both ways of identification. 
+### Identification
+
+We have learned until now two ways of identification. The first one is imposing restriction on the contemporaneous effect between the variables by applying restriction on the Cholesky decomposition matrix. The second methods imposes restriction on the long-term relation between the variables, this is the method proposed by [@blanchard1988]. We will proceed this exercise analysing both ways of identification.
 
 #### Short term restriction
 
@@ -272,7 +273,6 @@ svar_1 <- VAR(y = data_set[, c("gnp","u")], lag = 8, type =  "const") |> id.chol
 svar_2 <- VAR(y = data_set[, c("u", "gnp")], lag = 8, type =  "const") |> id.chol()
 
 ```
-
 
 #### Ploting the irf
 
@@ -290,9 +290,7 @@ plot(mb.boot(svar_2, n.ahead = 40, nboot = 1000), lowerq = 0.16, upperq = 0.84, 
 
 #### Long term restriction
 
-
-Unemployment and output growth are subject short term shock that have **temporary effect**. The macroeconomic theory interpret that output in the long run that is determined by the supply side of the economy, which means that disturbances that generates **permanent effect** are understood as being a **supply shock**. Note that in order to impose the long-run restriction to identification is used lower-triangular matrix obtained via Choleski decomposition. Therefore, the order of contemporaneous effect matters in the identification. 
-
+Unemployment and output growth are subject short term shock that have **temporary effect**. The macroeconomic theory interpret that output in the long run that is determined by the supply side of the economy, which means that disturbances that generates **permanent effect** are understood as being a **supply shock**. Note that in order to impose the long-run restriction to identification is used lower-triangular matrix obtained via Choleski decomposition. Therefore, the order of contemporaneous effect matters in the identification.
 
 ```{r}
 
@@ -385,7 +383,6 @@ gridExtra::grid.arrange(gnp_shock_gnp, gnp_shock_unem,
 
 \- Favorable supply disturbances may initially increase unemployment. This is followed by a decline in unemployment, with a slow return over time to its original value;
 
-
 ## Forecast Error Variance Decomposition (FEVD)
 
 In this section we analyse the contribution of each shock to explain the variance of the forecast.
@@ -472,9 +469,7 @@ gridExtra::grid.arrange(irf_gnp_gnp_full, irf_gnp_unem_full,
 
 ```
 
-#### Here we want reproduce the figure 7 to 9 from [@citeBlanchard1988] 
-
-
+#### Here we want reproduce the figure 7 to 9 from [@citeBlanchard1988]
 
 ```{r}
 
@@ -483,5 +478,3 @@ ggplot() +
                 y = var_bq$varresult$gnp$residuals))
 
 ```
-
-
