@@ -20,42 +20,6 @@ output:
 bibliography: references.bib
 ---
 
-## Review of the arcitle [@blanchard1988]
-
-There is two types o shocks in economy. First the permanent, which can be considered the supply effects. Second the temporary, or demand effects. The main point of the articles is how to model this two types of shocks. One possibility is to impose some prior restrictions. An second way is to use economic theory to information than only one series.
-
-They are interested in the effect of shock on GDP and uses information about unemployment to model the two types of disturbances. Which are uncorrelated and neither have long-run effect on unemployment. The assumptions are week enough to identification and characterization of the dynamic effect.
-
-Let $Y = (\Delta Y, U)^{\prime}$ where Y is the log of GDP and U the unemployment. And the vector of disturbances are given by $u = (u_{d},u_{s})$. Their model is given by
-
-$$
-A_{0} Y_{t}= \sum_{j=1}^{p} A_{j} y_{t-j} + Bu_{t}
-$$
-
-The assumption of long-run effect is given the impositions on the coefficients of $A_{0}$. Demand shocks have no long-run effect on GDP it means that $\sum_{j=0}^{\infty} \phi_{12}(j) = 0$. The stationary of the vector guarantees a moving average representation
-
-$$
-Y_{t} = \sum_{j =0}^{\infty} \Phi_{t} u_{t - j} \hspace{1cm} var(u) = \Omega
-$$
-
-Thus the following relations holds: $u = A_{0}^{-1} B e$ and $\Phi_{t} = (I_{K}- A_{0}^{-1} \sum^{t=p}_{t=0}A_{t})^{-1}B $. The main objective is the identification of the matrix $A_{0}$, which is possible by imposing four restrictions.
-
--   $BB^{\prime} = \Omega$
-
--   $$\sum_{j = 0}^{\infty} \Phi_{t} = D = \underbrace{\left(\begin{array}{cc} D_{11} & 0 \\
-D_{21} & D_{22}
-\end{array}\right)}_{\equiv D}\left(\begin{array}{c}
-u_{t}^{s} \\
-u_{t}^{d}
-\end{array}\right)
-$$
-
-Procedure proposed:
-
-1.  First Estimated the VAR.
-2.  Invert the coefficients to find the moving average
-3.  The moving average representation describes output and unemployment as functions of demand and supply shocks.
-
 ### Applied part
 
 ```{r warning=FALSE, include=FALSE}
@@ -83,8 +47,8 @@ tickers_names <- c("GNPC96", "UNRATE")
 quantmod::getSymbols.FRED(Symbols = tickers_names, env = .GlobalEnv, return.class = "xts")
 
 # Other way to download 
-gnp_raw <- Quandl("FRED/GNPC96", type = 'xts')
-u_raw <- Quandl("FRED/UNRATE", type = 'xts') 
+#gnp_raw <- Quandl("FRED/GNPC96", type = 'xts')
+#u_raw <- Quandl("FRED/UNRATE", type = 'xts') 
 
 ```
 
@@ -98,6 +62,8 @@ ggplot(data = GNPC96) +
   scale_y_continuous(breaks = seq(2500, 20000, by = 2500)) + 
   labs(x = "Date", y = "GNP", title = "GNP Time Series") + 
   theme_light()
+
+
 ```
 
 ```{r,  fig.align="left", fig.width = 5, fig.height=4}

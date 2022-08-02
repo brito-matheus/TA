@@ -3,12 +3,13 @@ title: "EP1 - Applied Macroeconometrics"
 author: "Monitor: Matheus Carrijo de Brito"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
-  prettydoc::html_pretty:
-    theme: cayman
-    hightlight: github
-    bibliography: biblio.bib
-    math: katex
-    link-citations: True
+  html_document:
+       highlight: textmate
+       theme: flatly
+       number_sections: true
+       code_folding: show
+       toc: true
+       toc_float: false
 
   #html_document:
   #     highlight: textmate
@@ -19,42 +20,6 @@ output:
   #     toc_float: false
 bibliography: references.bib
 ---
-
-## Review of the arcitle [@blanchard1988]
-
-There is two types o shocks in economy. First the permanent, which can be considered the supply effects. Second the temporary, or demand effects. The main point of the articles is how to model this two types of shocks. One possibility is to impose some prior restrictions. An second way is to use economic theory to information than only one series.
-
-They are interested in the effect of shock on GDP and uses information about unemployment to model the two types of disturbances. Which are uncorrelated and neither have long-run effect on unemployment. The assumptions are week enough to identification and characterization of the dynamic effect.
-
-Let $Y = (\Delta Y, U)^{\prime}$ where Y is the log of GDP and U the unemployment. And the vector of disturbances are given by $u = (u_{d},u_{s})$. Their model is given by
-
-$$
-A_{0} Y_{t}= \sum_{j=1}^{p} A_{j} y_{t-j} + Bu_{t}
-$$
-
-The assumption of long-run effect is given the impositions on the coefficients of $A_{0}$. Demand shocks have no long-run effect on GDP it means that $\sum_{j=0}^{\infty} \phi_{12}(j) = 0$. The stationary of the vector guarantees a moving average representation
-
-$$
-Y_{t} = \sum_{j =0}^{\infty} \Phi_{t} u_{t - j} \hspace{1cm} var(u) = \Omega
-$$
-
-Thus the following relations holds: $u = A_{0}^{-1} B e$ and $\Phi_{t} = (I_{K}- A_{0}^{-1} \sum^{t=p}_{t=0}A_{t})^{-1}B $. The main objective is the identification of the matrix $A_{0}$, which is possible by imposing four restrictions.
-
--   $BB^{\prime} = \Omega$
-
--   $$\sum_{j = 0}^{\infty} \Phi_{t} = D = \underbrace{\left(\begin{array}{cc} D_{11} & 0 \\
-D_{21} & D_{22}
-\end{array}\right)}_{\equiv D}\left(\begin{array}{c}
-u_{t}^{s} \\
-u_{t}^{d}
-\end{array}\right)
-$$
-
-Procedure proposed:
-
-1.  First Estimated the VAR.
-2.  Invert the coefficients to find the moving average
-3.  The moving average representation describes output and unemployment as functions of demand and supply shocks.
 
 ### Applied part
 
@@ -83,26 +48,28 @@ tickers_names <- c("GNPC96", "UNRATE")
 quantmod::getSymbols.FRED(Symbols = tickers_names, env = .GlobalEnv, return.class = "xts")
 
 # Other way to download 
-gnp_raw <- Quandl("FRED/GNPC96", type = 'xts')
-u_raw <- Quandl("FRED/UNRATE", type = 'xts') 
+#gnp_raw <- Quandl("FRED/GNPC96", type = 'xts')
+#u_raw <- Quandl("FRED/UNRATE", type = 'xts') 
 
 ```
 
-```{r, fig.align="left", fig.width = 5, fig.height=4}
+```{r, fig.align="center", fig.width = 10, fig.height=4}
 
 # Plotting the product data 
 
 ggplot(data = GNPC96) + 
   geom_line(aes(x = Index, y = GNPC96)) + 
   scale_x_date(breaks = "5 years", date_labels = "%Y") + 
-  scale_y_continuous(breaks = seq(2500, 20000, by = 2500)) + 
+  scale_y_continuous(breaks = seq(2500, 20000, by = 5000)) + 
   labs(x = "Date", y = "GNP", title = "GNP Time Series") + 
   theme_light()
+
+
 ```
 
-```{r,  fig.align="left", fig.width = 5, fig.height=4}
+```{r,  fig.align="center", fig.width = 10, fig.height=4}
 
-# Plotting the data 
+# Plotting the unemployment data
 
 ggplot(data = UNRATE) + 
   geom_line(aes(x = Index, y = UNRATE)) + 
@@ -115,11 +82,11 @@ ggplot(data = UNRATE) +
 
 ```
 
-```{r}
+```{r, warning=FALSE}
 
 # Note that are required some transformation in data since unemployment is at monthly frequency and the GNP is on the level.  
 
-# taking the difference in GNP  
+# Taking the difference in GNP  
 
 dgnp <- 100*diff(log(GNPC96), lag = 1) |> na.omit() 
 
@@ -129,18 +96,15 @@ u_quartely <- apply.quarterly(x = UNRATE, FUN = mean)
   
 index(u_quartely) <- as.Date(as.yearqtr(index(u_quartely)))
   
-
-# Just cheking the first and last row 
-#lapply(list(GNPC96, UNRATE), FUN =  function(x) list(start(x, n =1), last(x, n = 1)))
-
 # Subsetting the window of Blanchard and Quah (1989) 
 
-data_set <- merge(dgnp, u_quartely, join = "inner")["1948-04-01/1988-01-01"] |> 
+data_set <- merge(dgnp, u_quartely, join = "inner")["1948-04-01/1987-10-01"] |> 
   as.zoo()
+
 
 ```
 
-In the article, th authors arguments that after oil shock the growth of GNP becomes lower. Indeed, a simple descriptive analysis shows this effect. Before the shock, the annualized growth was 3.9 and after was 2.8. Consistent with the oil shock being a supply shock, the unemployment also increased in the same period. The Average unemployment was 4.7 % and growth to 7.3 % after the shock.
+In the article, the authors arguments that after oil shock the growth of GNP becomes lower. Indeed, a simple descriptive analysis shows this effect. Before the shock, the annualized growth was 3.9 and after was 2.8. Consistent with the oil shock being a supply shock, the unemployment also increased in the same period. The Average unemployment was 4.7 % and growth to 7.3 % after the shock.
 
 ```{r}
 
@@ -169,7 +133,7 @@ data_set |>
 
 ```
 
-To write the var in the reduced form is necessary to have a moving-average representation. To satisfies this assumption the stationarity of the series are required. The authors employs two transformation in the original series.
+To assure stationarity of all variables in our VAR, we need to extract the cycle component of each series the authors employs two transformation in the original series.
 
 -   **Unemployment:** remove an estimated linear trend (OLS regression)
 
@@ -177,18 +141,16 @@ To write the var in the reduced form is necessary to have a moving-average repre
 
 We will proceed in the same way. Also, we included the constant coefficient to get a demean series.
 
-```{r}
+```{r, warning=FALSE, fig.align="center", fig.width=10, fig.height=7}
 
 detrend_u <- dynlm(data_set$UNRATE ~ trend(data_set$UNRATE))
-
-summary(detrend_u)
 
 # Extract break in GNP data (lower growth rate after 1974)
 
 dummy <- zoo(tstools::create_dummy_ts(end = c(1987,4), 
                                   dummy_start = c(1974,1), 
                                   dummy_end = c(1987,4), 
-                                  start_basic = c(1948,1), 
+                                  start_basic  = c(1948,2), 
                                   basic_value = 0, 
                                   dummy_value = 1,
                                   frequency = 4), order.by = index(data_set))
@@ -196,16 +158,14 @@ dummy <- zoo(tstools::create_dummy_ts(end = c(1987,4),
 data_set <- merge(data_set, dummy)
 
 # Estimation of demean gnp 
-demean_gnp <- dynlm(GNPC96 ~ 1 + dummy, data = data_set)
+demean_gnp <- dynlm(data_set$GNPC96 ~ 1 + dummy, data = data_set)
 
-# Visualization of the estimation 
-#summary(demean_gnp) 
-
+# Extracting the residuals 
 data_set$gnp <- demean_gnp$residuals 
 
 data_set$u <- detrend_u$residuals 
 
-# Ploting the data 
+# Plotting the data 
 
 data_set |> 
   data.frame(date = index(data_set)) |> 
@@ -222,11 +182,9 @@ data_set |>
   theme_bw() + 
   scale_x_date(breaks = "5 years", date_labels = "%Y")
   
-
-
 ```
 
-#### Var estimation
+# Var estimation
 
 ```{r}
 
@@ -241,6 +199,7 @@ for(i in seq_along(var_models)){
   
 }
 
+# Table with the Optimal Lag using each Information Criteria 
 kbl(VARselect(data_set[, c("gnp","u")], lag.max = 20)$selection, 
     caption = "Optimal number of Lags by Information Criteria", 
     col.names = "Lags", align = "c", booktabs = T) |> 
@@ -248,37 +207,39 @@ kbl(VARselect(data_set[, c("gnp","u")], lag.max = 20)$selection,
 
 ```
 
-#### Printing the results of the estimations
+# Printing the results of the estimations
 
 ```{r,  results ='asis', message = FALSE, echo=TRUE}
 
-stargazer::stargazer(var_models$var_aic$varresult$gnp,
-                     var_models$var_aic$varresult$u, 
+var8 <- VAR(y = data_set[, c("gnp","u")], p =8, type = "none")
+
+stargazer::stargazer(var8$varresult$gnp,
+                     var8$varresult$u, 
                      type = "html",  
                      dep.var.labels = c("Variation GNP", "Unemployment"), 
                      dep.var.labels.include = T)
 
 ```
 
-### Identification
+# Identification
 
-We have learned until now two ways of identification. The first one is imposing restriction on the contemporaneous effect between the variables by applying restriction on the Cholesky decomposition matrix. The second methods imposes restriction on the long-term relation between the variables, this is the method proposed by [@blanchard1988]. We will proceed this exercise analyzing both ways of identification.
+We have learned until now two ways of identification. The first one is imposing restriction on the contemporaneous effect between variables by applying restriction on the Cholesky decomposition matrix. The second methods imposes restriction on the long-term relation between the variables, this is the method proposed by [@blanchard1988]. We will proceed this exercise analyzing both ways of identification.
 
 #### Short term restriction
 
 ```{r}
 
-# Note that, in this identification the order matters!!! 
+# Note that the order matters using short-run identification !!! 
 
-svar_1 <- VAR(y = data_set[, c("gnp","u")], lag = 8, type =  "const") |> id.chol() 
+svar_1 <- VAR(y = data_set[, c(5, 6)], p = 8, type =  "none") |> id.chol() 
 
-svar_2 <- VAR(y = data_set[, c("u", "gnp")], lag = 8, type =  "const") |> id.chol()
+svar_2 <- VAR(y = data_set[, c(6, 5)], p = 8, type =  "none") |> id.chol()
 
 ```
 
 #### Plotting the impulse response function
 
-```{r}
+```{r, fig.align='center', results='hold'}
 
 plot(mb.boot(svar_1, n.ahead = 40, nboot = 1000), lowerq = 0.16, upperq = 0.84, distr = "gaussian") + 
   theme_bw(base_size = 12) + 
@@ -290,37 +251,23 @@ plot(mb.boot(svar_2, n.ahead = 40, nboot = 1000), lowerq = 0.16, upperq = 0.84, 
                                  
 ```
 
-#### Long term restriction
+# Long term restriction
 
-Unemployment and output growth are subject short term shock that have **temporary effect**. The macroeconomic theory interpret that output in the long run that is determined by the supply side of the economy, which means that disturbances that generates **permanent effect** are understood as being a **supply shock**.
+We interpret the disturbances that have a **temporary effect** on output as being mostly **demand disturbances**, and those that have a **permanent effect** on output as mostly **supply disturbances**. Note that in order to impose the long-run restriction to identification is used lower-triangular matrix obtained via Choleski decomposition. Therefore, the order of contemporaneous effect matters in the identification.
 
-Note that in order to impose the long-run restriction to identification is used lower-triangular matrix obtained via Choleski decomposition. Therefore, the order of contemporaneous effect matters in the identification.
+```{r ,warning = F}
 
-```{r}
+var_bq <- VAR(y = data_set[, c("gnp", "u")], p = 8, type = "none")
 
-# Estimation using the same lags of Blanchard and Quah 
-
-var_bq <- VAR(y = data_set[, c("gnp","u")], p = 8, type = "none")
-
-svar_bq <- svars::id.chol(var_bq)
+svar_bq <- id.chol(var_bq)
 
 bq_ident <- BQ(var_bq)
 
-# Estimation directly using the SVAR model imposing the blanchard restriction on B and the short term restricion on A
-
-Bmat = matrix(NA, nrow = 2, ncol = 2)
-Amat = matrix(NA, nrow = 2, ncol = 2)
-
-Bmat[2,1] <- 0
-Bmat[1,2] <- 0 
-
-Amat[1,2] <- 0
-
-svar_estimation_bq <- SVAR(x = var_bq, Amat = Amat, Bmat = Bmat)
+summary(bq_ident)
 
 ```
 
-```{r}
+```{r , warning=F}
 
 # Construction of some useful functions to make plotting easier 
 
@@ -328,31 +275,35 @@ irf_bq <- vars::irf(bq_ident, n.ahead = 40, boot = T, ci = 0.68)
 
 irf_bq_cum <- vars::irf(bq_ident, n.ahead = 40, boot = T, ci = 0.68, cumulative = T)
 
-extract_df_irf <- function(irf, outcome, shock){
+extract_df_irf <- function(model, response, impulse, cumulative){
   
-  df_irf <- data.frame(outcome_irf = irf[["irf"]][[outcome]][, shock],
-              outcome_irf_lower = irf[["Lower"]][[outcome]][, shock], 
-              outcome_irf_upper = irf[["Upper"]][[outcome]][, shock], 
-              periods = 1:dim(irf[["irf"]][[1]])[1])
+  irf <- vars::irf(model, n.ahead = 40, boot = T, ci = 0.68,
+                   impulse = impulse, response = response, cumulative = cumulative)
+  
+  df_irf <- data.frame(irf[["irf"]][[impulse]],
+              irf[["Lower"]][[impulse]], 
+              irf[["Upper"]][[impulse]], 
+              periods = 1:dim(irf[["irf"]][[1]])[1]) |> 
+    setNames(c("response", "response_lower", "response_upper", "periods")) 
   
   return(df_irf)
 }
 
-plot_irf <- function(irf, outcome, shock, title){
+plot_irf <- function(model, impulse, response, cumulative, title){
 
-  ggplot(data = extract_df_irf(irf = irf, outcome = outcome, shock = shock)) +
+  irf_plot <- ggplot(data = extract_df_irf(model = model, response = response, impulse = impulse, cumulative=cumulative)) +
   geom_line(aes(x = periods, 
-               y = outcome_irf))  +
+               y = response))  +
     geom_hline(yintercept = 0, color="red") +
     geom_ribbon(aes(x = periods, 
-               y = outcome_irf, ymin = outcome_irf_lower, ymax = outcome_irf_upper), 
+               y = response, ymin = response_lower, ymax = response_upper), 
                fill = "grey", alpha = .4, 
                color = "grey50", linetype = "dashed") +
     labs(x = "Time", y = "Response") + 
     theme_light() +
     ggtitle(title) +
     theme(plot.title = element_text(size = 11, hjust=0.5),
-          axis.title.y = element_text(size=11)) -> irf_plot
+          axis.title.y = element_text(size=11))
 
   return(irf_plot)
 }
@@ -364,23 +315,23 @@ Making and plotting the IRFs
 
 ```{r}
 
-gnp_shock_gnp <- plot_irf(irf = irf_bq_cum, outcome = "gnp", shock = 1, 
-                    title = TeX("$\\epsilon_{dgnp} \\rightarrow DGNP$"))
+irf_gnp_shock_gnp <- plot_irf(model = bq_ident, impulse = "gnp", response = "gnp", cumulative = T, 
+                    title = TeX("Supply Shock $\\rightarrow$ Response Output$"))
 
-gnp_shock_unem <- plot_irf(irf = irf_bq, outcome = "gnp", shock = 2, 
-                    title = TeX("$\\epsilon_{u} \\rightarrow DGNP$"))
+irf_gnp_shock_unem <- plot_irf(model = bq_ident, impulse = "u", response = "gnp", cumulative = T, 
+                    title = TeX("Demand Shock $\\rightarrow$ Response Output"))
 
-unem_shock_dgnp <- plot_irf(irf = irf_bq_cum, outcome = "u", shock = 1, 
-                    title = TeX("$\\epsilon_{dgnp} \\rightarrow Unemplyment$"))
+irf_unem_shock_dgnp <- plot_irf(model = bq_ident, impulse = "gnp", response = "u", cumulative = F,  
+                    title = TeX("Supply Shock $\\rightarrow$ Response Unemployment"))
 
-unem_shock_unem <- plot_irf(irf = irf_bq, outcome = "u", shock = 2, 
-                    title = TeX("$\\epsilon_{u} \\rightarrow Unemplyment$"))
+irf_unem_shock_unem <- plot_irf(model = bq_ident, impulse = "u", response = "u", cumulative = F, 
+                    title = TeX("Demand Shock $\\rightarrow$ Response Unemployment"))
 
 
 # All plots together 
 
-gridExtra::grid.arrange(gnp_shock_gnp, gnp_shock_unem, 
-                        unem_shock_dgnp, unem_shock_unem) 
+gridExtra::grid.arrange(irf_gnp_shock_gnp, irf_gnp_shock_unem, 
+                        irf_unem_shock_dgnp, irf_unem_shock_unem) 
 
 
 ```
@@ -397,12 +348,11 @@ gridExtra::grid.arrange(gnp_shock_gnp, gnp_shock_unem,
 
 \- Favorable supply disturbances may initially increase unemployment. This is followed by a decline in unemployment, with a slow return over time to its original value;
 
-## Forecast Error Variance Decomposition (FEVD)
+# Forecast Error Variance Decomposition (FEVD)
 
 In this section we analyse the contribution of each shock to explain the variance of the forecast.
 
 ```{r, fig.align="center", fig.height=7}
-
 
 plot(fevd(x = bq_ident, n.ahead = 40))
 
@@ -410,32 +360,31 @@ plot(fevd(x = bq_ident, n.ahead = 40))
 
 ### Now we need to use the full sample
 
-```{r}
+```{r, warning=F}
 
-dt_full <- merge(x = dgnp, u_quartely, join = "inner") |> as.zoo()
+dt_full <- merge(x = dgnp, u_quartely, join = "inner")["1948-07-01/2021-04-01"] |> as.zoo()
 
-names(dt_full) <- c("dgnp", "unem")
+names(dt_full) <- c("gnp", "u")
 
 # Making the transformations 
 
 dt_full$dummy <- zoo(tstools::create_dummy_ts(end = c(2021,1), 
                                   dummy_start = c(1974,1), 
                                   dummy_end = c(2021,1), 
-                                  start_basic = c(1948,1), 
+                                  start_basic = c(1948,2), 
                                   basic_value = 0, 
                                   dummy_value = 1,
-                                  frequency = 4), order.by = index(dt_full))
+                                  frequency = 4), 
+                     order.by = index(dt_full))
 
 # Creating a dummy 
 
 # Making the unemployment residuals 
-dt_full$u <- dynlm(unem ~ 1 + trend(unem), data = dt_full) |> residuals()
+dt_full$u_2 <- dynlm(dt_full$u ~ 1 + trend(dt_full$u), data = dt_full) |> residuals()
 
 # Making the structural break on GNP  
 
-dt_full$gnp <- dynlm(dgnp ~ 1 + dummy, data = dt_full) |> residuals()
-
-var_full <- VAR(dt_full[, c(4,5)], p = 8, type = "const") 
+dt_full$gnp_2 <- dynlm(dt_full$gnp ~ 1 + dummy, data = dt_full) |> residuals()
 
 ```
 
@@ -443,47 +392,44 @@ var_full <- VAR(dt_full[, c(4,5)], p = 8, type = "const")
 
 ```{r results ='asis', message = FALSE, echo=FALSE}
 
+var_full <- VAR(dt_full[, c(1,2)], p = 8, type = "const") 
+
 stargazer::stargazer(var_full$varresult$gnp, 
                      var_full$varresult$u, 
                      type = "html", 
                      title = "Unrestricted VAR results", style = "aer")
 ```
 
-#### Using the identification a la Blanchard and Quah 1988
+# Using the full sample 
 
-```{r}
+```{r, warning = F}
 
 bq_ident_full = BQ(var_full)
 
-#summary(bq_ident_full)
+summary(bq_ident_full)
 
-irf_bq_full <- vars::irf(bq_ident_full, n.ahead=40, boot= TRUE, ci = 0.68)
+# Non-cumulative and cumulative IRFs
 
-irf_bq_full_cum <- vars::irf(bq_ident_full, n.ahead=40, boot= TRUE, ci = 0.68, cumulative = T)
+irf_gnp_shock_gnp_full <- plot_irf(model = bq_ident_full, impulse = "gnp", response = "gnp", cumulative = T, 
+                    title = TeX("Supply Shock $\\rightarrow$ Response Output$"))
 
-# non-cumulative and cumulative IRFs
+irf_gnp_shock_unem_full <- plot_irf(model = bq_ident_full, impulse = "u", response = "gnp", cumulative = T, 
+                    title = TeX("Demand Shock $\\rightarrow$ Response Output"))
 
-irf_gnp_gnp_full  <- plot_irf(irf = irf_bq_full_cum , outcome = "gnp", shock = 2, 
-                    title = TeX("$\\epsilon_{dgnp} \\rightarrow DGNP$"))
+irf_unem_shock_dgnp_full <- plot_irf(model = bq_ident_full, impulse = "gnp", response = "u", cumulative = F,  
+                    title = TeX("Supply Shock $\\rightarrow$ Response Unemployment"))
 
-irf_gnp_unem_full  <- plot_irf(irf = irf_bq_full , outcome = "gnp", shock = 1, 
-                    title = TeX("$\\epsilon_{u} \\rightarrow DGNP$"))
-
-irf_unem_dgnp_full  <- plot_irf(irf = irf_bq_full , outcome = "u", shock = 1, 
-                    title = TeX("$\\epsilon_{dgnp} \\rightarrow Unemplyment$"))
-
-irf_unem_unem_full <- plot_irf(irf = irf_bq_full , outcome = "u", shock = 2, 
-                    title = TeX("$\\epsilon_{u} \\rightarrow Unemplyment$"))
+irf_unem_shock_unem_full <- plot_irf(model = bq_ident_full, impulse = "u", response = "u", cumulative = F, 
+                    title = TeX("Demand Shock $\\rightarrow$ Response Unemployment"))
 
 
 
-gridExtra::grid.arrange(irf_gnp_gnp_full, irf_gnp_unem_full,
-                        irf_unem_dgnp_full, irf_unem_unem_full)
+gridExtra::grid.arrange(irf_gnp_shock_gnp_full, irf_gnp_shock_unem_full,
+                        irf_unem_shock_dgnp_full, irf_unem_shock_unem_full)
 
 ```
 
-
-#### 
+# Construction of the counter-factual series
 
 
 ```{r, warning=F}
@@ -542,10 +488,10 @@ predict_y_supply[t, 2] <- sum(predict_y_supply_aux[2, ])
 
 }
 
-
+# Data Set 
 data_set_cf <- merge(data_set[, c("gnp", "u")], 
-      xts(predict_y_demand, order.by = index(data_set)[9:160]) , 
-      xts(predict_y_supply, order.by = index(data_set)[9:160])) |> 
+      xts(predict_y_demand, order.by = index(data_set)[9:159]) , 
+      xts(predict_y_supply, order.by = index(data_set)[9:159])) |> 
   data.frame() |>
   mutate(date = index(data_set[, c("gnp", "u")])) |>
   setNames(c("gnp", "u", "cf_gnp_demand_shock", "cf_u_demand_shock", 
@@ -553,8 +499,9 @@ data_set_cf <- merge(data_set[, c("gnp", "u")],
 
 ```
 
+# Plotting the counter-factual series for output and unemployement
 
-```{r, warning=F}
+```{r, warning=F, fig.align="center", fig.width=10, fig.height=7}
 # Plot Output Decomposition 
 data_set_cf |>
   select(c("date",  "gnp","cf_gnp_demand_shock",  "cf_gnp_supply_shock")) |>
@@ -569,7 +516,6 @@ data_set_cf |>
   scale_x_date(date_labels = "%Y", breaks = "2.5 years")
 
   
-
 # Plots Unemployment decomposition 
 
 data_set_cf |>
@@ -586,8 +532,9 @@ data_set_cf |>
 
 ```
 
+# Plotting the counter-factual series for output flutuations in level
 
-```{r}
+```{r warning=F, fig.align="center", fig.height=7, fig.width=10}
 
 data_set_cf |>
   select(c("date",  "gnp","cf_gnp_demand_shock",  "cf_gnp_supply_shock")) |>
