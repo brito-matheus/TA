@@ -1,2 +1,1 @@
-# TA
-TA folders 
+# Applied Macroeconomics Exercises 
