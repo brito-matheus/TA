@@ -1,0 +1,394 @@
+---
+title: "EP2_applied_macro_matheus"
+author: "Matheus Carrijo de Brito"
+date: "`r Sys.Date()`"
+
+output: 
+  html_document:
+       highlight: textmate
+       theme: flatly
+       number_sections: true
+       code_folding: show
+       toc: true
+       toc_float: false
+bibliography: references.bib
+---
+
+```{r}
+
+rm(list = ls())
+
+```
+
+# Short Introduction to the package
+
+To illustrate the idea behind the signal restriction lets assume a simple reduced-form VAR(1)
+
+$$
+Y_{t}=A Y_{t-1} + e_{t} \text { for } t=1,2, \ldots, T
+$$ The variance covariance matrix is the form:
+
+
+$$
+\Sigma=E\left[e_{t} e_{t}^{\prime}\right]
+$$ In the reduced form errors does not contain any economic interpretation since they are linear combination of the structural shock. The relationship between the reduced-form and structural errors are given by:
+
+
+$$
+Be_{t} = \varepsilon_{t}
+$$ The identification of the structural parameters uses
+
+
+$$
+BB^{\prime}=\Sigma=E\left[e_{t} e_{t}^{\prime}\right]
+$$
+
+to impose restrictions on the matrix $B$. The signal identification relies on the fact that
+
+$$
+BQQ^{\prime}B^{\prime} = \Sigma  = E\left[e_{t} e_{t}^{\prime}\right] \hspace{1cm} \text{if} \hspace{1cm} QQ^{\prime} = I_{n}
+$$
+
+The idea is to not impose directly any parameters conditions on the matrix $BQ$, but generates many draws of the matrix $Q$, uses each of them to estimate a IRF and compute select those that satisfies the signal and discart those who doesn't satisfies.
+
+The procedure is the following:
+
+1.  Run an unrestricted VAR in order to get $\widehat{A}$ and $\widehat{\Sigma}$.
+2.  Extract the orthogonal innovations from the model using a Cholesky decomposition. The Cholesky decomposition here is just a way to orthogonalise shocks rather than an identification strategy.
+3.  Calculate the resulting impulse responses from Step $2$
+4.  Randomly draw an orthogonal impulse vector $\alpha$
+5.  Multiply the responses from Step 3 times $\alpha$ and check if they match the imposed signs.
+6.  If yes, keep the response. If not, drop the draw.
+7.  Repeat Steps 2-6.
+
+# Start applied part
+
+```{r, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(readxl)
+library(VARsignR)
+library(stargazer)
+library(vars)
+library(svars)
+
+set.seed(666)
+
+
+```
+
+## Data
+
+All variables in the data set, except the FED funds rate, are the natural log of the original data series times 100 in line with the transformations of the data of the original paper.
+
+```{r}
+
+# Optional: use monthly US macro data used by Uhlig (2005).
+data(uhligdata)
+
+# Extended data with additional variables
+dados  <-  read_excel("data_ea2.xlsx", sheet = "data")
+
+GDP          <- ts(log(100*dados$rgdp), start=c(1965,1),end=c(2005,4),frequency=4)
+Deflator     <- ts(log(100*dados$pgdp), start=c(1965,1),end=c(2005,4),frequency=4)
+Commodity    <- ts(log(100*dados$pcomm), start=c(1965,1),end=c(2005,4),frequency=4)
+FFD          <- ts(dados$ff, start=c(1965,1),end=c(2005,4),frequency=4)
+NonReserves  <- ts(log(100*dados$nbres), start=c(1965,1),end=c(2005,4),frequency=4)
+TotReserves  <- ts(log(100*dados$totres), start=c(1965,1),end=c(2005,4),frequency=4)
+Consumption  <- ts(log(100*dados$rcons), start=c(1965,1),end=c(2005,4),frequency=4)
+Investment   <- ts(log(100*dados$rinv), start=c(1965,1),end=c(2005,4),frequency=4)
+
+# Alternative Data 
+
+dados  <-  read_excel("C:/Users/mathe/OneDrive/Documentos/Phd/Monitorias/TA/data_ep6_renan.xlsx", 
+                     sheet = "dados_origin")
+GDP          <- ts(log(100*dados$GDP), start=c(1965,1),end=c(2019,4),frequency=4)
+Deflator     <- ts(log(100*dados$Deflator), start=c(1965,1),end=c(2019,4),frequency=4)
+Commodity    <- ts(log(100*dados$Commodity), start=c(1965,1),end=c(2019,4),frequency=4)
+FFD          <- ts(dados$FFD, start=c(1965,1),end=c(2019,4),frequency=4)
+NonReserves  <- ts(log(100*dados$NonReserves), start=c(1965,1),end=c(2019,4),frequency=4)
+TotReserves  <- ts(log(100*dados$TotReserves), start=c(1965,1),end=c(2019,4),frequency=4)
+Consumption  <- ts(log(100*dados$Consumption), start=c(1965,1),end=c(2019,4),frequency=4)
+Investment   <- ts(log(100*dados$Investment), start=c(1965,1),end=c(2019,4),frequency=4)
+
+data1 <- cbind(GDP, Deflator, Commodity, FFD, NonReserves, TotReserves)
+
+
+```
+
+# Identification using short term restrictions
+
+Before using sign restrictions to identify your VAR, try the traditional short-term restriction scheme. How would you order the variables? How does your IRFs look like?
+
+
+# Identification using sign restrictions
+
+## Uhlig's Rejection Method
+
+@uhlig2005effects original question was to analyse the effect of an unanticipated monetary policy shock, i.e an increase of one standard deviation in the FED funds rate on US real GDP and the 'price puzzle'.
+
+Based on standard DSGE models, @uhlig2005effects suggested that an unanticipated innovation in the FED's policy rate:
+
+-   Does not decrease the FED's policy rate for x months after the shock;
+
+-   Does not increase commodity prices and inflation for x months after the shock;
+
+-   Does not increase non-borrowed reserves for x months after the shock.
+
+Thus, @uhlig2005effects uses four restrictions in total to identify a monetary policy shock. Important: the first element of the vector with sign restrictions indicates the shock of interest in the model (monetary, FFD):
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+
+# Build restriction vector
+# Indeed, the signal restrictions are not strictly inequalities. 
+
+constr = c(+4, # FFD has a positive effect on FFD
+           -3, # FFD has a negative effect on Commodity
+           -2, # FFD has a negative effect on Deflator
+           -5  # FFD has a negative effect on NonReserves
+           )   # TotReserves and GDP are unscontrained
+
+
+# Uhlig’s (2005) Rejection Method:
+model1 = uhlig.reject(Y=data1,             # data 
+                      nlags=12,            # Number of lags used 
+                      draws=200,           # Number of draws of the matrix Q  
+                      subdraws=200,        # Number of sub-draws when the matrix Q does not satisfies
+                      nkeep=1000,          # Max numbers of draws 
+                      KMIN=1,              # Restriction on signal from period 1 
+                      KMAX=6,              # Restriction on signal to periods  6
+                      constrained=constr,  # Vector of signal constraint 
+                      constant=FALSE,      
+                      steps=60             # Number of steps in the IRF
+                      ) 
+
+# Original Data from Uhlig 2005
+model1_original <- uhlig.reject(Y=uhligdata,             # data 
+                      nlags=12,            # Number of lags used 
+                      draws=200,           # Number of draws of the matrix Q  
+                      subdraws=200,        # Number of sub-draws when the matrix Q does not satisfies
+                      nkeep=1000,          # Max numbers of draws 
+                      KMIN=1,              # Restriction on signal from period 1 
+                      KMAX=6,              # Restriction on signal to periods  6
+                      constrained=constr,  # Vector of signal constraint 
+                      constant=FALSE,      
+                      steps=60             # Number of steps in the IRF
+                      )
+
+
+```
+
+```{r fig.height=7, fig.align='center'}
+
+irfs1 = model1$IRFS  
+
+vl = c("GDP","GDP Deflator","Comm.Pr.Index","Fed Funds Rate","NB Reserves", "Total Reserves")
+
+irfplot(irfdraws=irfs1,
+        type="mean", # Mean or median 
+        labels=vl, save=F, 
+        bands=c(0.16, 0.84), # One standard deviation
+        grid=TRUE, 
+        bw=F)
+
+```
+
+ Plotting the IRF from original article
+
+```{r}
+
+irfplot(irfdraws = model1_original$IRFS, type = "mean", labels = vl, save = F)
+
+
+```
+
+
+## FEVDs for the shock of interest
+
+```{r}
+
+fevd1 <- model1$FEVDS
+
+# table
+kableExtra::kbl(fevdplot(fevd1, table=TRUE, 
+         label=vl, 
+         periods=c(1,2,3,4,5,10,20,30,40,50,60)), booktabs = T) |> 
+  kableExtra::kable_styling()
+
+# plot
+fevdplot(fevd1, label=vl, 
+         save=FALSE, 
+         bands=c(0.16, 0.84), 
+         grid=TRUE, bw=FALSE,
+         table=FALSE, 
+         periods=c(1,10,20,30,40,50,60))
+
+# Extracting the shocks 
+
+shocks <- model1$SHOCKS
+ss <- ts(t(apply(shocks,2,quantile,probs=c(0.5, 0.16, 0.84))), frequency=12, start=c(1966,1))
+plot(ss[,1], type="l", col="blue", ylab="Interest rate shock", ylim=c(min(ss), max(ss)))
+abline(h=0, col="black")
+lines(ss[,2], col="red")
+lines(ss[,3], col="red")
+
+```
+
+## Price Puzzle
+
+Recall that the price puzzle is a positive impact of interest rates on the inflation. It is a common result when using the recursive identification. 
+
+Let's add a restriction to the response of GDP after a monetary shock:
+
+```{r warning=FALSE, message=FALSE, results = 'hide'}
+
+# Build restriction vector
+constr = c(+4, # FFD has a positive effect on FFD
+           -3, # FFD has a negative effect on Commodity
+           -2, # FFD has a negative effect on Deflator
+           -5, # FFD has a negative effect on NonReserves
+           -1  # FFD has a negative effect on GDP
+           )   # TotReserves is unscontrained
+
+# Uhlig’s (2005) Rejection Method:
+model2 = uhlig.reject(Y=data1,
+                      nlags=12,
+                      draws=200,
+                      subdraws=200,
+                      nkeep=1000,
+                      KMIN=1,
+                      KMAX=6,
+                      constrained=constr, 
+                      constant=FALSE, 
+                      steps=60)
+
+# Uhlig’s (2005) Rejection Method:
+model2_original = uhlig.reject(Y=uhligdata,
+                      nlags=12,
+                      draws=200,
+                      subdraws=200,
+                      nkeep=1000,
+                      KMIN=1,
+                      KMAX=6,
+                      constrained=constr, 
+                      constant=FALSE, 
+                      steps=60)
+
+```
+
+```{r fig.height=7, fig.align='center'}
+
+irfs2 = model2$IRFS  
+
+irfplot(irfdraws=irfs2, type="median", labels=vl, save=F, bands=c(0.16, 0.84), grid=TRUE, bw=F) 
+
+```
+IRF from original article 
+
+
+```{r}
+
+irfplot(irfdraws = model2_original$IRFS, type = "median", labels = vl)
+
+```
+
+## Adding variables to the model. 
+
+
+```{r warning=FALSE, message=FALSE, results='hide'}
+
+data2 <- cbind(GDP, Deflator, Commodity, FFD, NonReserves, TotReserves, Consumption, Investment)
+
+# Build restriction vector
+constr = c(+4, # FFD has a positive effect on FFD
+           -3, # FFD has a negative effect on Commodity
+           -2, # FFD has a negative effect on Deflator
+           -5, # FFD has a negative effect on NonReserves
+           -7, # FFD has a negative effect on Consumption
+           -8  # FFD has a negative effect on Investment
+           )   # TotReserves and GDP are unscontrained
+
+# Uhlig’s (2005) Rejection Method. Note: we use 4 lags in this exercise.
+model3 = uhlig.reject(Y=data2,
+                      nlags=4,
+                      draws=200,
+                      subdraws=200,
+                      nkeep=1000,
+                      KMIN=1,
+                      KMAX=6,
+                      constrained=constr, 
+                      constant=FALSE, 
+                      steps=60)
+
+
+
+```
+
+```{r fig.height=7, fig.align='center'}
+
+irfs3 = model3$IRFS  
+
+v2 = c("GDP","GDP Deflator","Comm.Pr.Index","Fed Funds Rate","NB Reserves", "Total Reserves", "Consumption", "Investment")
+
+irfplot(irfdraws=irfs3, type="median", labels=v2, save=FALSE, bands=c(0.16, 0.84), grid=TRUE, bw=F) 
+
+
+```
+
+## Uhlig's (2005) Penalty Function Method
+
+One shortcoming of the two rejection methods above is that all impulse vectors satisfying the sign restrictions are considered to be equally likely @uhlig2005effects. Moreover, by construction, the rejection methods will only find impulse vectors that will exactly satisfy the sign restrictions. In some cases, there might be only very few impulse vectors which satisfy a full set of restrictions. A way to tackle this problem is @uhlig2005effects penalty function method.
+
+The penalty function is a way to not discard the draws that does not follows the signal restrictions. Instead, is based on finding an impulse response function that comes as close as possible
+to satisfying the imposed sign restrictions by minimizing a function that penalizes sign restriction
+violations. 
+
+```{r warning=FALSE, message=FALSE, results = 'hide'}
+# Penalty Function Method
+
+# Build restriction vector.
+constr = c(+4, # FFD has a positive effect on FFD
+           -3, # FFD has a negative effect on Commodity
+           -2, # FFD has a negative effect on Deflator
+           -5, # FFD has a negative effect on NonReserves
+           -6  # FFD has a negative effect on TotReserves
+           )   # GDP is unscontrained
+
+model4 = uhlig.penalty(Y=data1, nlags=4, draws=2000, subdraws=1000,
+                        nkeep=1000, KMIN=1, KMAX=6, constrained=constr,
+                        constant=FALSE, steps=60, penalty=100, crit=0.001)
+
+```
+
+```{r fig.height=7, fig.align='center'}
+
+irfs4 = model4$IRFS
+
+irfplot(irfdraws=irfs4, type="median", labels=vl, save=FALSE, bands=c(0.16, 0.84),grid=TRUE, bw=FALSE) 
+
+
+```
+
+## Fry and Pagan's (2011) median target method for uhlig.reject
+
+One way to analyse how significant the model identification problem is and how well the shocks in the model are identified, is @fry2011sign Median-Target (MT) method. @fry2011sign MT method is to find the single impulse vector $\alpha$ that produces impulse responses that are as close to the median responses as possible.
+
+Basically, the MT methods is a diagnostic device of the identification strategy and model specification, since strong differences between the MT impulse responses and the median responses indicates that standard model inference is biased and misleading. 
+
+```{r fig.height=7, fig.align='center'}
+
+fp.target(Y=data1, irfdraws=irfs1, nlags=12, constant=F, 
+                    labels=vl, target=TRUE, type="median", bands=c(0.16, 0.84), 
+                    save=FALSE, grid=TRUE, bw=FALSE,legend=TRUE, maxit=1000)
+
+```
+
+
+```{r}
+
+fp.target(Y = uhligdata, irfdraws = model2_original$IRFS, 
+              nlags=12, constant=F, 
+              labels=vl, target=TRUE, type="median", bands=c(0.16, 0.84), 
+              save=FALSE, grid=TRUE, bw=FALSE,legend=TRUE, maxit=1000)
+
+```

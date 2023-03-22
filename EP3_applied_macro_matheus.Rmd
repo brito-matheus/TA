@@ -1,0 +1,441 @@
+---
+title: "EP3_applied_macro_matheus"
+author: "Matheus Carrijo de Brito"
+date: "`r Sys.Date()`"
+output:
+    html_document:
+       highlight: textmate
+       theme: flatly
+       number_sections: true
+       code_folding: show
+       toc: true
+       toc_float: false
+---
+
+# Short-Resume of the article 
+
+***Key Identifying Assumption***: is that news about the economy on the FOMC day does not affect the policy choice. Only information available the previous day is relevant. Given this assumption, surprises in fed
+funds futures on FOMC dates are orthogonal to within period movements in both economic and financial variables
+
+One limitation of the procedure is possible to identify the instantaneous effect of policy surprise on interest rate, but it hard to precisely know they persistence.
+
+***Resume of they procedure***: Exploit the HFI approach to identify exogenous policy surprises but then use a full VAR to trace out the dynamic responses of
+real and financial variables.
+
+Three implications of the standard theory: 
+
+1-  Response of the annual yield on an m period government bond
+to a surprise monetary policy action should equal the surprise in the average of the
+annualized current short rate and the expected future short rates m − 1 periods into
+the future, with no response of the term premium.
+
+2- Response of the yield
+on an m period private security should similarly equal the surprise in the expected
+path of the short rate over a similar horizon, though in this case with no change in
+either the term premium or the credit spread. 
+
+3- Surprise monetary policy action should affect real rates as well as nominal rates across a nontrivial portion of the yield curve.
+
+
+
+# Introduction
+
+*Gertler and Karadi (2015)*: To evaluate the nature of monetary policy transmission, the paper analyzes the joint response of a variety of economic and financial variables to exogenous monetary policy surprises. The policy surprises include shocks to forward guidance. Their specific approach involves combining the traditional "money shock" vector autoregression (VAR) analysis with high frequency identification (HFI).
+
+The key identifying assumption is that news about the economy on the FOMC day does not affect the policy choice. Only information available the previous day is relevant. Given this assumption, surprises in fed funds futures on FOMC dates (measured with a 30 minute window) are orthogonal to within period movements in both economic and financial variables.
+
+**Discussion:** why don't we just use monetary policy surprises as an instrument for FED FUNDS? What is the 1st stage in GK (2015) setup?
+
+## Load packages and functions
+
+Let's clear the workspace and load packages and functions.
+
+```{r}
+knitr::opts_chunk$set(fig.width = 12, fig.align = "center", fig.height = 6
+)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+
+rm(list=ls())
+
+library(tidyverse)
+library(readxl)
+library(vars)
+library(varexternalinstrument) # remotes::install_github("angusmoore/varexternalinstrument")
+library(lubridate)
+library(devtools)
+library(gridExtra)
+
+source_url("https://raw.githubusercontent.com/anguyen1210/var-tools/master/R/extract_varirf.R")
+
+
+```
+
+# Data
+
+Import the endogenous variables in our VAR and plot.
+
+```{r fig.align='center'}
+
+# Import data
+Data <- read_excel("data_ep3.xlsx",sheet = "VAR_data")
+
+# Crate full date
+Data$Date <- with(Data, ymd(paste(year, month, 1, sep = '-')))
+
+Data %>% dplyr::select(!c(year, month)) %>% 
+    pivot_longer(!Date) %>% 
+    ggplot(aes(x = Date, y = value)) +
+    geom_line() +
+    facet_wrap( ~ name, ncol = 3, scales = 'free',
+                labeller = as_labeller(c(cm10yr = "10 Year Gov Bond", 
+                                         cm5yr = "5 Year Gov Bond", 
+                                         cm5f5 = "5-10 Year Forward Rate Gov Bond", 
+                                         cp3m_spread_m = "Commercial Paper Spread", 
+                                         ebp = "Excess Bond Premium",
+                                         ff = "Federal Funds", 
+                                         ff_exp1yr = "1 Year FF Expectation", 
+                                         gs1 = "Gov Bond 1 Year", 
+                                         gs2 = "Gov Bond 2 Years", 
+                                         logcpi = "Log CPI", 
+                                         logip = "Log Industrial Production", 
+                                         mortg_spread_m = "Mortage Spread"))) +
+    theme_bw() + labs(x = "time", y ='')
+
+```
+
+Import and plot instruments:
+
+```{r fig.align='center', warning=FALSE}
+
+Instruments <- read_excel("data_ep3.xlsx",sheet = "Instruments")
+
+Instruments$Date <- with(Instruments, ymd(paste(year, month, 1, sep = '-')))
+
+Instruments %>% dplyr::select(!c(year, month)) %>% 
+    pivot_longer(!Date) %>% 
+    ggplot(aes(x = Date, y = value)) +
+    geom_line() +
+    facet_wrap( ~ name, ncol = 3, scales = 'free') +
+    theme_bw() + labs(x = '', y ='')
+
+```
+
+# VAR
+
+```{r}
+# Choose lag
+p = 12
+
+# Selec data for 4-variable VAR
+var_data = Data[,c("logip", "logcpi", "gs1", "ebp")]
+
+# Estimate unrestricted VAR
+var12 <- VAR(var_data, p = p, type = "const")
+
+# plot residuals ACF and PACF for gs1 equation.
+par(mar = c(4, 4, .1, .1))
+acf(var12$varresult$gs1$residuals)
+pacf(var12$varresult$gs1$residuals)
+```
+
+
+```{r }
+
+var_2 <- VAR(Data[, c("logip", "logcpi", "gs2","ebp")], p = 12, type = "const") 
+
+par(mar = c(4, 4, .1, .1))
+acf(var_2$varresult$gs2$residuals)
+pacf(var_2$varresult$gs2$residuals)
+
+```
+
+## 1st stage regression
+
+We will reproduce table 3 of the @gertler2015monetary in which they test the first stage regression. First, it is calculated that the VAR and the residuals of the instrumented variables are regressed against the instruments. Consistent with the article, the F-statistics is higher for the instrument `mp1_tc` and `ff4_tc`, both are higher than 10, which indicates they are not weak instruments. The instruments measured by the eurodollar futures show F-statistics lower than 10. Thus the author focuses mainly on the first to an instrument, opting by the one-year rate as the policy indicator and the three-month ahead funds rate surprise (FF4) as the policy indicator for our baseline case.
+
+```{r  warning=FALSE, results ='asis', message = FALSE, echo=TRUE}
+
+# Checking instruments
+monshock <- var12$varresult$gs1$residuals
+
+reg.ff1 <- lm(monshock ~ Instruments$mp1_tc[-(1:p)])
+reg.ff4 <- lm(monshock ~ Instruments$ff4_tc[-(1:p)])
+reg.ed2_tc <- lm(monshock ~ Instruments$ed2_tc[-(1:p)])
+reg.ed3_tc <- lm(monshock ~ Instruments$ed3_tc[-(1:p)])
+reg.ed4_tc <- lm(monshock ~ Instruments$ed4_tc[-(1:p)])
+reg.all <- lm(monshock ~ Instruments$mp1_tc[-(1:p)] + Instruments$ff4_tc[-(1:p)] + Instruments$ed2_tc[-(1:p)] + Instruments$ed3_tc[-(1:p)] + Instruments$ed4_tc[-(1:p)])
+
+#stargazer::stargazer(reg.ff1, reg.ff4, reg.ed2_tc,reg.ed3_tc,reg.ed4_tc,reg.all, type = 'text')
+stargazer::stargazer(reg.ff1, reg.ff4, reg.ed2_tc,reg.ed3_tc,reg.ed4_tc,reg.all, type = 'html')
+
+```
+## First Stage using the 2-year government bonds 
+
+```{r  warning=FALSE, results ='asis', message = FALSE, echo=TRUE}
+
+# Checking instruments
+monshock_gs2 <- var_2$varresult$gs2$residuals
+
+reg.ff1_gs2 <- lm(monshock_gs2 ~ Instruments$mp1_tc[-(1:p)])
+reg.ff4_gs2 <- lm(monshock_gs2 ~ Instruments$ff4_tc[-(1:p)])
+reg.ed2_tc_gs2 <- lm(monshock_gs2 ~ Instruments$ed2_tc[-(1:p)])
+reg.ed3_tc_gs2 <- lm(monshock_gs2 ~ Instruments$ed3_tc[-(1:p)])
+reg.ed4_tc_gs2 <- lm(monshock_gs2 ~ Instruments$ed4_tc[-(1:p)])
+reg.all_gs2 <- lm(monshock_gs2 ~ Instruments$mp1_tc[-(1:p)] + Instruments$ff4_tc[-(1:p)] + Instruments$ed2_tc[-(1:p)] + Instruments$ed3_tc[-(1:p)] + Instruments$ed4_tc[-(1:p)])
+
+#stargazer::stargazer(reg.ff1, reg.ff4, reg.ed2_tc,reg.ed3_tc,reg.ed4_tc,reg.all, type = 'text')
+stargazer::stargazer(reg.ff1_gs2, reg.ff4_gs2, reg.ed2_tc_gs2,reg.ed3_tc_gs2,reg.ed4_tc_gs2,reg.all_gs2, type = 'html')
+
+```
+
+## Short term restrictions
+
+```{r warning=FALSE, fig.align='center', fig.width=12, fig.height=6}
+
+var = VAR(var_data, ic = "SC", lag.max = 10) 
+
+# Recursive ("Cholesky") identification 
+A0 <- matrix(NA,4,4)
+A0[1, 2:4] <- 0
+A0[2, 3:4] <- 0
+A0[3, 4] <- 0
+
+# Estimate SVAR with recursive ("Cholesky") identification
+svar_chol <- SVAR(x = var12, Amat = A0, Bmat = NULL) 
+svar_chol
+
+# Compute and plot IRFs
+irf_chol <- extract_varirf(irf(svar_chol, impulse = "gs1", n.ahead = 40, ortho = TRUE, boot = TRUE))
+
+irf_chol %>% 
+  ggplot(aes(x=period, y=irf_gs1_gs1, ymin=lower_gs1_gs1, ymax=upper_gs1_gs1)) +
+  geom_hline(yintercept = 0, color="red") +
+  geom_ribbon(fill="grey", alpha=.4, color="grey50", linetype="dashed") +
+  geom_line(size = 1) +
+  theme_light() +
+  ggtitle("Monetary Shock - Response of 1-Year Gov. Bond")+
+  ylab("")+
+  xlab("")+
+  theme(plot.title = element_text(size = 11, hjust=0.5),
+        axis.title.y = element_text(size=11)) -> gs1.shock.on.gs1
+
+irf_chol %>% 
+  ggplot(aes(x=period, y=irf_gs1_logip, ymin=lower_gs1_logip, ymax=upper_gs1_logip)) +
+  geom_hline(yintercept = 0, color="red") +
+  geom_ribbon(fill="grey", alpha=.4, color="grey50", linetype="dashed") +
+  geom_line(size = 1) +
+  theme_light() +
+  ggtitle("Monetary Shock - Response of industrial production")+
+  ylab("")+
+  xlab("")+
+  theme(plot.title = element_text(size = 11, hjust=0.5),
+        axis.title.y = element_text(size=11)) -> gs1.shock.on.logip
+
+
+irf_chol %>% 
+  ggplot(aes(x=period, y=irf_gs1_logcpi, ymin=lower_gs1_logcpi, ymax=upper_gs1_logcpi)) +
+  geom_hline(yintercept = 0, color="red") +
+  geom_ribbon(fill="grey", alpha=.4, color="grey50", linetype="dashed") +
+  geom_line(size = 1) +
+  theme_light() +
+  ggtitle("Monetary Shock - Response of CPI")+
+  ylab("")+
+  xlab("")+
+  theme(plot.title = element_text(size = 11, hjust=0.5),
+        axis.title.y = element_text(size=11)) -> gs1.shock.on.logcpi
+
+irf_chol %>% 
+  ggplot(aes(x=period, y=irf_gs1_ebp, ymin=lower_gs1_ebp, ymax=upper_gs1_ebp)) +
+  geom_hline(yintercept = 0, color="red") +
+  geom_ribbon(fill="grey", alpha=.4, color="grey50", linetype="dashed") +
+  geom_line(size = 1) +
+  theme_light() +
+  ggtitle("Monetary Shock - Response of excess bond premium")+
+  ylab("")+
+  xlab("")+
+  theme(plot.title = element_text(size = 11, hjust=0.5),
+        axis.title.y = element_text(size=11)) -> gs1.shock.on.ebp
+
+grid.arrange(gs1.shock.on.gs1, gs1.shock.on.logip, gs1.shock.on.logcpi, gs1.shock.on.ebp)
+
+```
+
+## External Instruments
+
+The choice of FF4 as an instrument is based on the strong performance of this variable as an external instrument in the VAR analysis, as GK (2015) illustrates.
+
+```{r}
+# Identification via external instruments
+shock_hfi <- externalinstrument(var12, Instruments$ff4_tc, "gs1")
+
+# The result, shock_hfi contains the instantaneous response of each of the variables in the VAR to a shock to gs1
+shock_hfi
+
+```
+
+Build IRFs using the MA representation of the VAR and feeding the system with a initial one standard deviation surprise monetary tightening (`shock_hfi`).
+
+```{r  fig.align='center', fig.width=12, fig.height=6}
+
+# Get MA representation of the VAR
+ma_representation <- Phi(var12, 50)
+
+irf_proxy <- apply(ma_representation, 3, function(x) x %*% shock_hfi)
+
+irf_proxy <- as.data.frame(t(irf_proxy))
+
+colnames(irf_proxy) <- names(shock_hfi)
+
+irfs <- mutate(irf_proxy, horizon = 0:50)
+
+irfs <- gather(irfs, key = variable, value = response, -horizon)
+
+ggplot(irfs, aes(x = horizon, y = response, color = variable)) + 
+    geom_line(size = 1.5) +
+    geom_hline(yintercept = 0) +
+    facet_wrap( ~ variable, scales = 'free', 
+                labeller = as_labeller(c(ebp = "Excess Bond Premium",
+                                         gs1 = "1-Year Gov Bond", 
+                                         logcpi = "Log CPI", 
+                                         logip = "Log Industrial Production"
+                  
+                ))) +
+    theme_bw()
+
+
+```
+
+
+## Adding more credit cost variables 
+
+Recall that:
+
+1- Excess bond premium is relevant to the cost of long term credit in the non-farm business sector
+
+2- Mortgage spread is relevant to the cost of housing finance.
+
+3- Three-month commercial paper spread is relevant to the cost of short term business credit, as well as the cost of financing consumer durables
+
+```{r}
+
+
+var_credit <- VAR(Data[, c("logip", "logcpi", "gs1", "ebp", "cp3m_spread_m","mortg_spread_m")], p = 12, type = "const") 
+
+```
+
+
+### Indentification using the external instrument
+
+```{r}
+# Identification via external instruments
+shock_hfi_credit <- externalinstrument(var_credit, Instruments$ff4_tc, "gs1")
+
+# The result, shock_hfi contains the instantaneous response of each of the variables in the VAR to a shock to gs1
+shock_hfi_credit
+
+```
+
+### investigating the impact of a monetary policy shock 
+
+```{r, fig.align="center", fig.width=10, fig.height=6}
+
+# Get MA representation of the VAR
+ma_credit <- Phi(var_credit, 50)
+
+irf_proxy_credit <- apply(ma_credit, 3, function(x) x %*% shock_hfi_credit)
+
+irf_proxy_credit <- as.data.frame(t(irf_proxy_credit))
+
+colnames(irf_proxy_credit) <- names(shock_hfi_credit)
+
+irfs_credit <- mutate(irf_proxy_credit, horizon = 0:50)
+
+irfs_credit <- gather(irfs_credit, key = variable, value = response, -horizon) |> 
+  mutate(variable = factor(variable))
+
+
+ggplot(irfs_credit, aes(x = horizon, y = response, color = variable)) + 
+    geom_line(size = 1.5) +
+    geom_hline(yintercept = 0) +
+    facet_wrap( ~ variable, scales = 'free', nrow = 3, ncol = 2, 
+                labeller = as_labeller(c(ebp = "Excess Bond Premium",
+                                         gs1 = "1-Year Gov Bond", 
+                                         logcpi = "Log CPI", 
+                                         logip = "Log Industrial Production", 
+                                         cp3m_spread_m = "Comercial Paper Spread", 
+                                         mortg_spread_m = "Mortgage Spread"))) +
+    theme(legend.position = "bottom")
+
+```
+
+
+### Using surprise in the current month fed funds futures 
+
+```{r}
+
+shock_hfi_credit_ff_0 <- externalinstrument(var_credit, Instruments$mp1_tc, "gs1")
+
+# The result, shock_hfi contains the instantaneous response of each of the variables in the VAR to a shock to gs1
+shock_hfi_credit_ff_0 
+
+```
+
+### Making the IRFs 
+
+```{r}
+
+# Get MA representation of the VAR
+ma_credit_ff_0 <- Phi(var_credit, 50)
+
+irf_proxy_credit_ff_0 <- apply(ma_credit_ff_0, 3, function(x) x %*% shock_hfi_credit_ff_0)
+
+irf_proxy_credit_ff_0 <- as.data.frame(t(irf_proxy_credit_ff_0))
+
+colnames(irf_proxy_credit_ff_0) <- names(shock_hfi_credit)
+
+irfs_credit_ff_0 <- mutate(irf_proxy_credit_ff_0, horizon = 0:50)
+
+irfs_credit_ff_0 <- gather(irfs_credit_ff_0, key = variable, value = response, -horizon) |> 
+  mutate(variable = factor(variable))
+
+```
+
+
+```{r}
+irfs_credit_complete <- dplyr::bind_cols(irfs_credit, irfs_credit_ff_0$response) |> 
+  setNames(c("horizon", "variable", "ff4", "ff0")) |> 
+  gather(!c("horizon", "variable"), key = "identification", value = "response")
+```
+#### comments
+
+The plot below compares the identification using the federal surprise shock measure in the current month, given by `ff0`, and the surprise shock measure by changes in the 3-months future rates of the fed fund, `ff3`. It is possible to visualize the impact of the monetary shock on the inflation measured by the log of CPI and the effect on Industrial Production. As it is expected the signal is negative for both. Unfortunately, the confidence intervals are not calculated because it depends on bootstrap procedure; thus, it is impossible to argue if the impact is statistically different from zero. But the main interest is to analyze the effect on credit cost. 
+
+A positive monetary shock means a tightening in the financial conditions. Thus the spread between the high-quality corporate bonds to low-quality increases as shown by the effect on `Comercial Paper Spread`. The impact remains positive for almost 6 months and declines to zero after. Note that the result seems quite similar whenever using ff3 or ff0. The exact similarity does not hold for the impact of `Excessive Bond Premium`. Surprises measured in the current months leads to a higher effect, almost 8% increase in the spread. In contrast, surprises in the 3-months futures fed funds led to a rise of 2% in the bond premium. For the mortgage spread, the impact is very close independently of the instrument used. In the article, the instrument used as a benchmark is the surprise on the 3-months future fed funds rates because it is the best instrument by the F-statistic of week instrument. However, the identification using current surprise shocks induces a higher response in credit variables and the product. 
+
+```{r}
+
+# Plotting the IRFs for identification using two different instruments
+
+ggplot(irfs_credit_complete, aes(x = horizon, y = response, colour = identification)) +
+    geom_line(size = 1.5) +
+    geom_hline(yintercept = 0) +
+    facet_wrap( ~ variable, scales = 'free', nrow = 3, ncol = 2, 
+                labeller = as_labeller(c(ebp = "Excess Bond Premium",
+                                         gs1 = "1-Year Gov Bond", 
+                                         logcpi = "Log CPI", 
+                                         logip = "Log Industrial Production", 
+                                         cp3m_spread_m = "Comercial Paper Spread", 
+                                         mortg_spread_m = "Mortgage Spread"))) +
+    theme(legend.position = "bottom") + 
+  scale_colour_manual(values = c("black", "grey"), labels = c("FF3", "FF0"), name = "External Instrument")
+
+
+
+
+```
+
+
+

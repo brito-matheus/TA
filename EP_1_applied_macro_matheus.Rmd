@@ -23,7 +23,7 @@ bibliography: references.bib
 
 ### Applied part
 
-```{r warning=FALSE, include=FALSE}
+```{r warning=FALSE, include=FALSE, fig.height=7, fig.width=12, fig.align="center"}
 rm(list = ls()) 
 
 library(data.table) # Data manipulation
@@ -38,6 +38,7 @@ library(tseries)
 library(latex2exp)
 library(dplyr)
 library(stargazer)
+
 ```
 
 
@@ -104,15 +105,15 @@ data_set <- merge(dgnp, u_quartely, join = "inner")["1948-04-01/1987-10-01"] |>
 
 ```
 
-In the article, the authors arguments that after oil shock the growth of GNP becomes lower. Indeed, a simple descriptive analysis shows this effect. Before the shock, the annualized growth was 3.9 and after was 2.8. Consistent with the oil shock being a supply shock, the unemployment also increased in the same period. The Average unemployment was 4.7 % and growth to 7.3 % after the shock.
+In the article, the authors arguments that after oil shock the growth of GNP becomes lower. Indeed, a simple descriptive analysis shows this effect. Before the shock, the annualized growth was 3.9 and after was 2.8. Consistent with the oil shock being a supply shock, the unemployment also increased in the same period. The Average unemployment was 4.7 % and growth to 7.3 % after the shock. 
 
 ```{r}
 
 # Making the column with the periods 
-data_set$period <- fcase(between(index(data_set), 
+data_set$period <- fcase(dplyr::between(index(data_set), 
                                  left =  as.Date("1948-04-01"),
                                  right = as.Date("1973-07-01")), 1, 
-                         between(index(data_set), 
+                         dplyr::between(index(data_set), 
                                  left =  as.Date("1973-10-01"),
                                  right = as.Date("1987-01-01")), 2)
    
@@ -154,6 +155,7 @@ dummy <- zoo(tstools::create_dummy_ts(end = c(1987,4),
                                   basic_value = 0, 
                                   dummy_value = 1,
                                   frequency = 4), order.by = index(data_set))
+
 # Merging all data  
 data_set <- merge(data_set, dummy)
 
@@ -186,6 +188,36 @@ data_set |>
 
 # Var estimation
 
+##  Information criteria:
+
+In general the estimation of VAR model requires the estimation of many parameters. For example, in a VAR(p) with k  variables there are $k + k^{2}p + K(K-1)/2$ parameters to estimate. The main problem is in time-series analyses we often deal with short-periods of time. Thus, the estimation of many parameters implies in a trade-off since the addition of lags increase the information in the model. However, more imprecisely is the estimation of those parameters. Another problems that may arise is the **overfitting**. The model is great in sample but perform poorly in forecasting. 
+
+Information Criteria are metrics used to choose the right number of lags in the specification of a VAR model. The general formula is:
+
+$$
+CI(I) =  ln(\hat{\Sigma}) + c_{T}\Psi(I)
+$$
+where $c_{T}$ is a function that penalize the inclusion of lags and $\Psi(I)$ is the number of parameters estimated using the I lags. The most common information criteria are:
+
+- Akaike information: $C_{T} = \frac{2}{T}$ 
+
+- Schwarz Information or Bayesian Information (BIC) $c_{T} = \frac{log(T)}{T}$ 
+
+- Hannah-Quinn Information: $c_{T} = \frac{2log(log(T))}{T}$ 
+
+Note that for a fair comparison between the models is necessary to use the same sample and the same T. 
+
+Is possible to demonstrate that for $T \geq 16$
+
+$$
+\hat{P}_{B I C} \leq \hat{p}_{H Q} \leq \hat{p}_{A I C}
+$$
+
+Moreover, BIC and HQ are consistent estimators of the true number of lags which does not hold for the AIC information. However, the advantage of AIC is the better properties in finite sample. More precisely, the lag choosen by AIC is more closer to the true lag. 
+
+Another important criteria used to choose the right number of lags is checking with the residuals of the model are like white-noise. That is, without serial-correlation. One test to check this is the Portmanteu, LM tests. 
+
+
 ```{r}
 
 information_criteria <- c("AIC", "SC", "HQ")
@@ -198,6 +230,12 @@ for(i in seq_along(var_models)){
                          ic = information_criteria[i])
   
 }
+
+# Example of LM test 
+#arch.test(var_models$var_aic, lags.multi = 8, multivariate.only = T)
+
+# Example of Portmanteu test 
+#serial.test(x = var_models$var_aic, lags.pt = 8, type = "PT.adjusted")
 
 # Table with the Optimal Lag using each Information Criteria 
 kbl(VARselect(data_set[, c("gnp","u")], lag.max = 20)$selection, 
@@ -225,7 +263,14 @@ stargazer::stargazer(var8$varresult$gnp,
 
 We have learned until now two ways of identification. The first one is imposing restriction on the contemporaneous effect between variables by applying restriction on the Cholesky decomposition matrix. The second methods imposes restriction on the long-term relation between the variables, this is the method proposed by [@blanchard1988]. We will proceed this exercise analyzing both ways of identification.
 
-#### Short term restriction
+The most general form of a VAR is writting in the structural form given by: 
+
+$$
+A_{0} y_{t}=b+\sum_{j=1}^{p} A_{j} y_{t-j} + Bu_{t}
+$$
+
+The **short term restriction** is imposing some structure in the contemporaneous effects between the variables which implies that some coefficient in the matrix $A_{0}$ is imposed. 
+
 
 ```{r}
 
@@ -237,7 +282,37 @@ svar_2 <- VAR(y = data_set[, c(6, 5)], p = 8, type =  "none") |> id.chol()
 
 ```
 
-#### Plotting the impulse response function
+
+## IRF function  
+
+This function allows us to know how the variables responds to structural shocks. Which is mathematically expressed in the derivative
+
+$$
+\operatorname{IRF}_{j}(h) \equiv \frac{\partial y_{t+h}}{\partial u_{j, t}}
+$$
+Note that since every VAR(p) have a representation as VAR(1) we can use the simplified notation:
+
+$$
+Y_{t} = c + \Phi_{1}Y_{t-1} + Bu_{} 
+$$
+Thus, the IRF can be written as $IRF_{j} = \Phi^{h}_{1}Bu_{j}$. 
+
+## FEVD 
+
+The decomposition of forecast error gives information about how relevant are each structural shock in explaining the error in forecast. Using the VMA formulation in the reduced form we can visualize the MSE which is given by the following equations. 
+
+$$
+\begin{aligned}
+\tilde{y}_{t+h \mid t} & \equiv y_{t+h}-y_{t+h \mid t}=\sum_{j=0}^{h-1} \Phi_{1}^{j} \varepsilon_{t+h-j} \\
+\operatorname{MSE}\left(\tilde{y}_{t+h \mid t}\right) &=\sum_{j=0}^{h-1} \Phi_{1}^{j} E\left[\varepsilon_{t+h-j} \varepsilon_{t+h-j}^{\prime}\right]\left(\Phi_{1}^{j}\right)^{\prime}
+\end{aligned}
+$$
+using that the relation between residual and structural shock, $e_{t} = B u_{t}$
+
+$$
+MSE\left(\tilde{y}_{t+h \mid t}\right) = \sum_{j=0}^{h-1} = \Phi^{j} B B^{\prime}\left(\Phi^{j}\right)^{\prime}
+$$ 
+
 
 ```{r, fig.align='center', results='hold'}
 
@@ -251,9 +326,38 @@ plot(mb.boot(svar_2, n.ahead = 40, nboot = 1000), lowerq = 0.16, upperq = 0.84, 
                                  
 ```
 
-# Long term restriction
+##  Long term restriction
 
 We interpret the disturbances that have a **temporary effect** on output as being mostly **demand disturbances**, and those that have a **permanent effect** on output as mostly **supply disturbances**. Note that in order to impose the long-run restriction to identification is used lower-triangular matrix obtained via Choleski decomposition. Therefore, the order of contemporaneous effect matters in the identification.
+
+The long run restriction used by [@citeBlanchard1988] can be expressed in the following way. Let $Y = (\Delta GNP, U)$in to simplification we can write the model as a SVAR(1). 
+
+
+$$
+Y_{t} = c + \Phi_{1}Y_{t-1} + Bu_{t}
+$$
+We can write the model in the VMA formula 
+
+$$
+Y_{t} = c(I - \Phi_{1})^{-1} + (I - \Phi_{1})^{-1}Bu_{t}
+$$
+with we denote $D = (I - \Phi_{1})^{-1}B$ there assumption is that 
+
+$$
+\left(\begin{array}{c}
+\Delta G D P_{t, \infty} \\
+u_{t, \infty}
+\end{array}\right)=\underbrace{\left(\begin{array}{cc}
+D_{11} & 0 \\
+D_{21} & D_{22}
+\end{array}\right)}_{\equiv D}\left(\begin{array}{c}
+u_{t}^{s} \\
+u_{t}^{d}
+\end{array}\right)
+$$
+
+- Supply shock have long-run impact on gdp and unemployment
+- Demand Shock have long-run impact only in the unemployment, thus gdp growth is not affect in the long-run by demand shock. 
 
 ```{r ,warning = F}
 
@@ -273,7 +377,9 @@ summary(bq_ident)
 
 irf_bq <- vars::irf(bq_ident, n.ahead = 40, boot = T, ci = 0.68)
 
-irf_bq_cum <- vars::irf(bq_ident, n.ahead = 40, boot = T, ci = 0.68, cumulative = T)
+plot(irf_bq)
+
+#irf_bq_cum <- vars::irf(bq_ident, n.ahead = 40, boot = T, ci = 0.68, cumulative = T)
 
 extract_df_irf <- function(model, response, impulse, cumulative){
   
@@ -288,6 +394,7 @@ extract_df_irf <- function(model, response, impulse, cumulative){
   
   return(df_irf)
 }
+
 
 plot_irf <- function(model, impulse, response, cumulative, title){
 
@@ -311,7 +418,7 @@ plot_irf <- function(model, impulse, response, cumulative, title){
 
 ```
 
-Making and plotting the IRFs
+### Making and plotting the IRFs
 
 ```{r}
 
@@ -321,7 +428,7 @@ irf_gnp_shock_gnp <- plot_irf(model = bq_ident, impulse = "gnp", response = "gnp
 irf_gnp_shock_unem <- plot_irf(model = bq_ident, impulse = "u", response = "gnp", cumulative = T, 
                     title = TeX("Demand Shock $\\rightarrow$ Response Output"))
 
-irf_unem_shock_dgnp <- plot_irf(model = bq_ident, impulse = "gnp", response = "u", cumulative = F,  
+irf_unem_shock_dgnp <- plot_irf(model = bq_ident, impulse = "gnp", response = "u", cumulative = T,  
                     title = TeX("Supply Shock $\\rightarrow$ Response Unemployment"))
 
 irf_unem_shock_unem <- plot_irf(model = bq_ident, impulse = "u", response = "u", cumulative = F, 
@@ -352,84 +459,17 @@ gridExtra::grid.arrange(irf_gnp_shock_gnp, irf_gnp_shock_unem,
 
 In this section we analyse the contribution of each shock to explain the variance of the forecast.
 
+
 ```{r, fig.align="center", fig.height=7}
 
 plot(fevd(x = bq_ident, n.ahead = 40))
 
 ```
 
-### Now we need to use the full sample
-
-```{r, warning=F}
-
-dt_full <- merge(x = dgnp, u_quartely, join = "inner")["1948-07-01/2021-04-01"] |> as.zoo()
-
-names(dt_full) <- c("gnp", "u")
-
-# Making the transformations 
-
-dt_full$dummy <- zoo(tstools::create_dummy_ts(end = c(2021,1), 
-                                  dummy_start = c(1974,1), 
-                                  dummy_end = c(2021,1), 
-                                  start_basic = c(1948,2), 
-                                  basic_value = 0, 
-                                  dummy_value = 1,
-                                  frequency = 4), 
-                     order.by = index(dt_full))
-
-# Creating a dummy 
-
-# Making the unemployment residuals 
-dt_full$u_2 <- dynlm(dt_full$u ~ 1 + trend(dt_full$u), data = dt_full) |> residuals()
-
-# Making the structural break on GNP  
-
-dt_full$gnp_2 <- dynlm(dt_full$gnp ~ 1 + dummy, data = dt_full) |> residuals()
-
-```
-
-#### Printing the results from VAR using the full sample
-
-```{r results ='asis', message = FALSE, echo=FALSE}
-
-var_full <- VAR(dt_full[, c(1,2)], p = 8, type = "const") 
-
-stargazer::stargazer(var_full$varresult$gnp, 
-                     var_full$varresult$u, 
-                     type = "html", 
-                     title = "Unrestricted VAR results", style = "aer")
-```
-
-# Using the full sample 
-
-```{r, warning = F}
-
-bq_ident_full = BQ(var_full)
-
-summary(bq_ident_full)
-
-# Non-cumulative and cumulative IRFs
-
-irf_gnp_shock_gnp_full <- plot_irf(model = bq_ident_full, impulse = "gnp", response = "gnp", cumulative = T, 
-                    title = TeX("Supply Shock $\\rightarrow$ Response Output$"))
-
-irf_gnp_shock_unem_full <- plot_irf(model = bq_ident_full, impulse = "u", response = "gnp", cumulative = T, 
-                    title = TeX("Demand Shock $\\rightarrow$ Response Output"))
-
-irf_unem_shock_dgnp_full <- plot_irf(model = bq_ident_full, impulse = "gnp", response = "u", cumulative = F,  
-                    title = TeX("Supply Shock $\\rightarrow$ Response Unemployment"))
-
-irf_unem_shock_unem_full <- plot_irf(model = bq_ident_full, impulse = "u", response = "u", cumulative = F, 
-                    title = TeX("Demand Shock $\\rightarrow$ Response Unemployment"))
-
-
-
-gridExtra::grid.arrange(irf_gnp_shock_gnp_full, irf_gnp_shock_unem_full,
-                        irf_unem_shock_dgnp_full, irf_unem_shock_unem_full)
-
-```
 
 # Construction of the counter-factual series
+
+Note that in the estimation of reduced form we have residual that related with both structural shock. Since every residual series is a linear combination of structural shock. Thus, an interesting exercise decompose the predict value of y by fixing one structural shock. In [@citeBlanchard1988] make this exercise in the figures 7 to 9. For example, the authors fixed the supply shock and analyse the impact of demand shock in the variation of gnp growth. We will make a similar exercise in the following codes. 
 
 
 ```{r, warning=F}
@@ -458,7 +498,6 @@ predict_y_supply <- data.frame(t(matrix(NA,
 matrix_shock_supply <- matrix(c(1,0,0,0), ncol=2, nrow =2)
 
 matrix_shock_demand <- matrix(c(0,0,0,1), ncol=2, nrow =2)
-
 
 # Recursive formula 
 
@@ -550,5 +589,78 @@ data_set_cf |>
                                     cf_gnp_demand_shock = "Output Flutuations due to Demand Shock", cf_gnp_supply_shock = "Output Flutuations due to Suppply Shock"))) + 
   theme_grey() + 
   scale_x_date(date_labels = "%Y", breaks = "2.5 years")
+
+```
+
+### Now we need to use the full sample
+
+```{r, warning=F}
+
+dt_full <- merge(x = dgnp, u_quartely, join = "inner")["1948-07-01/2021-04-01"] |> as.zoo()
+
+names(dt_full) <- c("gnp", "u")
+
+# Making the transformations 
+
+dt_full$dummy <- zoo(tstools::create_dummy_ts(end = c(2021,1), 
+                                  dummy_start = c(1974,1), 
+                                  dummy_end = c(2021,1), 
+                                  start_basic = c(1948,2), 
+                                  basic_value = 0, 
+                                  dummy_value = 1,
+                                  frequency = 4), 
+                     order.by = index(dt_full))
+
+# Creating a dummy 
+
+# Making the unemployment residuals 
+dt_full$u_2 <- dynlm(dt_full$u ~ 1 + trend(dt_full$u), data = dt_full) |> residuals()
+
+# Making the structural break on GNP  
+
+dt_full$gnp_2 <- dynlm(dt_full$gnp ~ 1 + dummy, data = dt_full) |> residuals()
+
+```
+
+# Printing the results from VAR using the full sample
+
+```{r results ='asis', message = FALSE, echo=FALSE}
+
+var_full <- VAR(dt_full[, c(1,2)], p = 8, type = "const") 
+
+stargazer::stargazer(var_full$varresult$gnp, 
+                     var_full$varresult$u, 
+                     type = "html", 
+                     title = "Unrestricted VAR results", style = "aer")
+```
+
+# Using the full sample 
+
+```{r, warning = F}
+
+bq_ident_full = BQ(var_full)
+
+
+summary(bq_ident)
+summary(bq_ident_full)
+
+
+# Non-cumulative and cumulative IRFs
+
+irf_gnp_shock_gnp_full <- plot_irf(model = bq_ident_full, impulse = "gnp", response = "gnp", cumulative = T, 
+                    title = TeX("Supply Shock $\\rightarrow$ Response Output$"))
+
+irf_gnp_shock_unem_full <- plot_irf(model = bq_ident_full, impulse = "u", response = "gnp", cumulative = T, 
+                    title = TeX("Demand Shock $\\rightarrow$ Response Output"))
+
+irf_unem_shock_dgnp_full <- plot_irf(model = bq_ident_full, impulse = "gnp", response = "u", cumulative = F,  
+                    title = TeX("Supply Shock $\\rightarrow$ Response Unemployment"))
+
+irf_unem_shock_unem_full <- plot_irf(model = bq_ident_full, impulse = "u", response = "u", cumulative = F, 
+                    title = TeX("Demand Shock $\\rightarrow$ Response Unemployment"))
+
+
+gridExtra::grid.arrange(irf_gnp_shock_gnp_full, irf_gnp_shock_unem_full,
+                        irf_unem_shock_dgnp_full, irf_unem_shock_unem_full)
 
 ```
